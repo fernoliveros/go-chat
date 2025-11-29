@@ -1,0 +1,15 @@
+<div class="chat-room">
+  <div class="chat-box">
+    <ul>
+      @for (msgObj of messages; track msgObj.id) {
+      <li>{{ msgObj.message }}</li>
+      }
+    </ul>
+  </div>
+  <form [formGroup]="chatForm" class="chat-form" (ngSubmit)="sendMessage()">
+    <input formControlName="message" type="text" name="message" />
+    <button type="submit" [disabled]="chatForm.invalid" class="send-button">
+      Send
+    </button>
+  </form>
+</div>
