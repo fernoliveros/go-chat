@@ -3,37 +3,23 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"strings"
-
-	nats "github.com/nats-io/nats.go"
 )
 
 var messages []string
+var msgChannels []chan struct{}
 
 func main() {
-	natSubChannel := "groupchat"
-	natPubChannel := "groupchat"
-	httpPort := "8080"
-
-	
 	registerLoginHandler()
-
-	nc, err := nats.Connect(nats.DefaultURL)
-	if err != nil {
-		fmt.Printf("Error connecting to nats server: %v", err)
-		return
-	}
-
-	registerSendHandler(nc, natPubChannel)
-	setupMessagesStream(nc, natSubChannel)
-
-	startHtmxServer(httpPort)
+	registerSendHandler()
+	setupMessagesStream()
+	
+	http.ListenAndServe(":8080", nil)
 }
 
-func setupMessagesStream(nc *nats.Conn, natSubChannel string) {
+func setupMessagesStream() {
 	http.HandleFunc("/messages", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("The /messages handler has been invoked!")
 		setupCORS(w)
@@ -49,11 +35,6 @@ func setupMessagesStream(nc *nats.Conn, natSubChannel string) {
 		w.Header().Set("Connection", "keep-alive")
 		w.WriteHeader(http.StatusOK)
 
-		ch := make(chan *nats.Msg, 64)
-		sub, err := nc.ChanSubscribe(natSubChannel, ch)
-		if err != nil {
-			fmt.Printf("Error subscribing to the natsubChannel: %v", err.Error())
-		}
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -61,24 +42,18 @@ func setupMessagesStream(nc *nats.Conn, natSubChannel string) {
 			return
 		}
 
+		myChan := make(chan struct{})
+		msgChannels = append(msgChannels, myChan)
 		ctx := r.Context()
 
 		for {
 			select {
 			case <-ctx.Done():
 				fmt.Println("Client disconnected")
-				sub.Unsubscribe()
 				return
-			case msg := <-ch:
-
-				fmt.Sprintf("msg not used but received: %s", string(msg.Data))
-
-				messages = append(messages, string(msg.Data))
-
+			case <-myChan:
 				ssePayload := fmt.Sprintf("event:message\ndata: %s\n\n", strings.Join(messages, ","))
-
-				// fmt.Printf("About to write to the messages stream:\n %s", ssePayload)
-				_, err = w.Write([]byte(ssePayload))
+				_, err := w.Write([]byte(ssePayload))
 				if err != nil {
 					fmt.Printf("Error writting data to the messages stream: %v", err.Error())
 				}
@@ -88,32 +63,7 @@ func setupMessagesStream(nc *nats.Conn, natSubChannel string) {
 	})
 }
 
-func startHtmxServer(port string) {
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("The default handler has been invoked!")
-		tmpl, err := template.ParseFiles("html/index.html")
-		if err != nil {
-			fmt.Printf("Error parsing index.html %v", err.Error())
-			http.Error(w, "Error parsing index.html", http.StatusInternalServerError)
-			return
-		}
-
-		data := struct{ Message string }{
-			Message: "Welcome to simple messaging app",
-		}
-
-		err = tmpl.Execute(w, data)
-		if err != nil {
-			fmt.Printf("Error executing data struct into index.html %v \n", err.Error())
-			http.Error(w, "Error executing data struct into index.html", http.StatusInternalServerError)
-			return
-		}
-	})
-	http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
-}
-
-func registerSendHandler(nc *nats.Conn, natPubChannel string) {
+func registerSendHandler() {
 	http.HandleFunc("/send", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("The send message handler has been invoked!")
 		setupCORS(w)
@@ -141,8 +91,11 @@ func registerSendHandler(nc *nats.Conn, natPubChannel string) {
 		}
 		fmt.Printf("Received post with %v\n", body.Message)
 
-
-		nc.Publish(natPubChannel, []byte(body.Message))
+		
+		messages = append(messages, string(body.Message))
+		for _, channel := range msgChannels {
+			channel <- struct{}{}
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK) 
@@ -155,11 +108,8 @@ func registerSendHandler(nc *nats.Conn, natPubChannel string) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 	})
-
 }
-
 
 func registerLoginHandler() {
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
