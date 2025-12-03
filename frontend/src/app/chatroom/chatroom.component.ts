@@ -42,8 +42,9 @@ export class ChatroomComponent {
   }
 
   sendMessage() {
+    const username = localStorage.getItem("username") ?? "Guest"
     this.sendSub = this.messageService
-      .sendMessage(this.chatForm.value)
+      .sendMessage({...this.chatForm.value, ...{username}})
       .subscribe({
         next: (value) => {
           console.log("successfully sent message", value);

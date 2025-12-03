@@ -26,6 +26,7 @@ export class LoginComponent {
       next: (value) => {
         console.log('successful login', value);
         localStorage.setItem('authenticated', 'true');
+        localStorage.setItem("username", this.loginForm.value.username ?? "Guest")
         this.router.navigate(['/']);
       },
       error: (err) => {

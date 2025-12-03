@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -23,12 +25,10 @@ func main() {
 }
 
 func setupMessagesStream() {
-	http.HandleFunc("/messages", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("The /messages handler has been invoked!")
+	http.HandleFunc("/api/messages", func(w http.ResponseWriter, r *http.Request) {
 		setupCORS(w)
 
 		if r.Method == "OPTIONS" {
-			fmt.Println("This is the options conditional")
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -44,6 +44,7 @@ func setupMessagesStream() {
 			return
 		}
 
+		fmt.Println("making new chan to add to list")
 		myChan := make(chan struct{})
 		msgChannels = append(msgChannels, myChan)
 		ctx := r.Context()
@@ -54,6 +55,8 @@ func setupMessagesStream() {
 				fmt.Println("Client disconnected")
 				return
 			case <-myChan:
+
+				fmt.Println("making new chan to add to list")
 				ssePayload := fmt.Sprintf("event:message\ndata: %s\n\n", strings.Join(messages, ","))
 				_, err := w.Write([]byte(ssePayload))
 				if err != nil {
@@ -66,8 +69,8 @@ func setupMessagesStream() {
 }
 
 func registerSendHandler() {
-	http.HandleFunc("/send", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("The send message handler has been invoked!")
+	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("API SEND START")
 		setupCORS(w)
 
 		if r.Method == "OPTIONS" {
@@ -85,15 +88,18 @@ func registerSendHandler() {
 		}
 
 		var body struct {
-			Message string `json:"message"`
+			Message  string `json:"message"`
+			Username string `json:"username"`
 		}
 		if err := json.Unmarshal(jsonBytes, &body); err != nil {
 			fmt.Printf("ERROR unmarshalling response body %v", err)
 
 		}
-		fmt.Printf("Received post with %v\n", body.Message)
 
-		messages = append(messages, string(body.Message))
+		userMessage := fmt.Sprintf("%s: %s", body.Username, body.Message)
+
+		fmt.Printf("Sending: %s", userMessage)
+		messages = append(messages, userMessage)
 		for _, channel := range msgChannels {
 			channel <- struct{}{}
 		}
@@ -115,12 +121,10 @@ func registerSendHandler() {
 }
 
 func registerLoginHandler() {
-	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("The login handler has been invoked!")
+	http.HandleFunc("/api/login", func(w http.ResponseWriter, r *http.Request) {
 		setupCORS(w)
 
 		if r.Method == "OPTIONS" {
-			fmt.Println("This is the options conditional")
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -142,7 +146,6 @@ func registerLoginHandler() {
 			fmt.Printf("ERROR unmarshalling response body %v", err)
 
 		}
-		fmt.Printf("Received post with %v\n", body)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -161,27 +164,20 @@ func registerLoginHandler() {
 }
 
 func registerDefaultHandler() {
-	fs := http.FileServer(http.Dir("../dist/browser"))
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("The default handler has been invoked!")
-		setupCORS(w)
+	buildPath := "../dist/browser"
+	fs := http.FileServer(http.Dir(buildPath))
 
-		if r.Method == "OPTIONS" {
-			fmt.Println("This is the options conditional")
-			w.WriteHeader(http.StatusOK)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := os.Stat(filepath.Join(buildPath, r.URL.Path)); os.IsNotExist(err) {
+			http.ServeFile(w, r, filepath.Join(buildPath, "index.html"))
 			return
 		}
-
-		if r.Method != "GET" {
-			http.Error(w, "we only allow gets", http.StatusMethodNotAllowed)
-		}
-
 		fs.ServeHTTP(w, r)
 	})
 }
 
 func setupCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", FE_URL)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 	w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
 	w.Header().Set("Access-Control-Allow-Credentials", "true")
