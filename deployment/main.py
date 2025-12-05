@@ -29,8 +29,8 @@ def check_remote_updates():
 def docker_stop_build_and_deploy():
     docker_client = docker.from_env()
 
-    stop_docker_container(docker_client)
-    prune_docker_images(docker_client)
+    stop_and_remove_docker_container(docker_client)
+    prune_docker_containers_and_images(docker_client)
     build_docker_image(docker_client)
     run_docker_container(docker_client)
 
@@ -40,6 +40,8 @@ def git_pull_latest():
         # Open the repository object
         repo = Repo(gochat_repo_path)
         assert not repo.bare
+
+        repo.git.pull('origin', 'main')
 
         print(f"Repository {gochat_repo_path} is open.")
         print(f"Current active branch: {repo.active_branch.name}")
@@ -87,25 +89,35 @@ def run_docker_container(docker_client):
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
-def stop_docker_container(docker_client):
+
+
+def stop_and_remove_docker_container(docker_client):
     try:
         container = docker_client.containers.get(gochat_docker_container_name)
         
-        print(f"Stopping container: {container.name} ({container.id})")
-        container.stop()
+        print(f"Found container: {container.name}")
+
+        # Stop the container if it is running
+        if container.status == "running":
+            print(f"Stopping container: {container.name} ({container.id})")
+            container.stop()
+            print(f"Container {container.name} stopped.")
         
-        print(f"Container {container.name} stopped.")
+        # Remove the container
+        print(f"Removing container: {container.name}...")
+        container.remove()
+        print(f"Container {container.name} removed successfully.")
+        
 
     except docker.errors.NotFound:
         print(f"Container {gochat_docker_container_name} not found.")
     except Exception as e:
         print(f"An error occurred: {e}")
 
-
-def prune_docker_images(docker_client):
-    filters = {'dangling': True}
+def prune_docker_containers_and_images(docker_client):
     
-    result = docker_client.images.prune(filters=filters)
+    result = docker_client.images.prune(filters={'dangling': True})
+    result = docker_client.containers.prune()
     
     print(f"Removed image IDs: {result['ImagesDeleted']}")
     print(f"Total space reclaimed: {result['SpaceReclaimed']} bytes")
