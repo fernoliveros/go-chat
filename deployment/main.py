@@ -72,7 +72,7 @@ def run_docker_container(docker_client):
         container = docker_client.containers.run(
             image=gochat_docker_image_tag,
             detach=True,
-            ports=port_mapping
+            ports=port_mapping,
             name=gochat_docker_container_name
         )
 
