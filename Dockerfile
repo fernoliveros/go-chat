@@ -4,7 +4,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
-RUN npm run build --configuration=production
+RUN npm run build:prod
 
 # Stage 2: Build the Go app
 FROM --platform=linux/amd64 golang:1.25.4 AS gobuilder
@@ -20,5 +20,6 @@ FROM scratch
 WORKDIR /app
 COPY --from=ngbuilder /app/dist /dist
 COPY --from=gobuilder /app/backend/gochat /gochat
+ENV CORS_ALLOWED_ORIGIN="gochat.local"
 EXPOSE 8080
 CMD ["/gochat"]

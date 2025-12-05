@@ -13,9 +13,12 @@ import (
 var messages []string
 var msgChannels []chan struct{}
 
-const FE_URL = "http://localhost:8080"
+var CORS_ALLOWED_ORIGIN string
 
 func main() {
+	// could use https://github.com/joho/godotenv for setting env vars
+	CORS_ALLOWED_ORIGIN = os.Getenv("CORS_ALLOWED_ORIGIN")
+
 	registerDefaultHandler()
 	registerLoginHandler()
 	registerSendHandler()
@@ -44,7 +47,6 @@ func setupMessagesStream() {
 			return
 		}
 
-		fmt.Println("making new chan to add to list")
 		myChan := make(chan struct{})
 		msgChannels = append(msgChannels, myChan)
 		ctx := r.Context()
@@ -55,8 +57,6 @@ func setupMessagesStream() {
 				fmt.Println("Client disconnected")
 				return
 			case <-myChan:
-
-				fmt.Println("making new chan to add to list")
 				ssePayload := fmt.Sprintf("event:message\ndata: %s\n\n", strings.Join(messages, ","))
 				_, err := w.Write([]byte(ssePayload))
 				if err != nil {
@@ -70,7 +70,6 @@ func setupMessagesStream() {
 
 func registerSendHandler() {
 	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("API SEND START")
 		setupCORS(w)
 
 		if r.Method == "OPTIONS" {
@@ -97,9 +96,8 @@ func registerSendHandler() {
 		}
 
 		userMessage := fmt.Sprintf("%s: %s", body.Username, body.Message)
-
-		fmt.Printf("Sending: %s", userMessage)
 		messages = append(messages, userMessage)
+
 		for _, channel := range msgChannels {
 			channel <- struct{}{}
 		}
@@ -168,6 +166,13 @@ func registerDefaultHandler() {
 	fs := http.FileServer(http.Dir(buildPath))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		setupCORS(w)
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		if _, err := os.Stat(filepath.Join(buildPath, r.URL.Path)); os.IsNotExist(err) {
 			http.ServeFile(w, r, filepath.Join(buildPath, "index.html"))
 			return
