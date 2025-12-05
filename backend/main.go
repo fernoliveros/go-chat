@@ -8,12 +8,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 var messages []string
-var msgChannels []chan struct{}
 
 var CORS_ALLOWED_ORIGIN string
+
+type MsgChan struct {
+	Id      uuid.UUID
+	Channel chan struct{}
+}
+
+var msgChannels []MsgChan
 
 func main() {
 	// could use https://github.com/joho/godotenv for setting env vars
@@ -47,16 +55,26 @@ func setupMessagesStream() {
 			return
 		}
 
-		myChan := make(chan struct{})
-		msgChannels = append(msgChannels, myChan)
+		msgObj := MsgChan{
+			Id:      uuid.New(),
+			Channel: make(chan struct{}),
+		}
+		msgChannels = append(msgChannels, msgObj)
 		ctx := r.Context()
 
 		for {
 			select {
 			case <-ctx.Done():
 				fmt.Println("Client disconnected")
+				// Remove channel from slice
+				for i, entry := range msgChannels {
+					if entry.Id == msgObj.Id {
+						msgChannels = append(msgChannels[:i], msgChannels[i+1:]...)
+						break
+					}
+				}
 				return
-			case <-myChan:
+			case <-msgObj.Channel:
 				ssePayload := fmt.Sprintf("event:message\ndata: %s\n\n", strings.Join(messages, ","))
 				_, err := w.Write([]byte(ssePayload))
 				if err != nil {
@@ -98,8 +116,8 @@ func registerSendHandler() {
 		userMessage := fmt.Sprintf("%s: %s", body.Username, body.Message)
 		messages = append(messages, userMessage)
 
-		for _, channel := range msgChannels {
-			channel <- struct{}{}
+		for _, msgObj := range msgChannels {
+			msgObj.Channel <- struct{}{}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
