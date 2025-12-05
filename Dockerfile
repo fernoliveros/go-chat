@@ -1,5 +1,5 @@
 # Stage 1: Build the Angular application
-FROM --platform=linux/amd64 node:lts-alpine AS ngbuilder
+FROM --platform=linux/arm64 node:lts-alpine AS ngbuilder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY frontend/ .
 RUN npm run build:prod
 
 # Stage 2: Build the Go app
-FROM --platform=linux/amd64 golang:1.25.4 AS gobuilder
+FROM --platform=linux/arm64 golang:1.25.4 AS gobuilder
 WORKDIR /app/backend
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
